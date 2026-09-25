@@ -8,6 +8,7 @@ on:
       - 'TeliTall.apk'
       - 'docs/**'
       - 'vercel.json'
+      - 'scripts/**'
       - '.github/workflows/**'
   workflow_dispatch:
 
@@ -37,17 +38,10 @@ jobs:
             git push
           fi
 
-      - name: Setup Node.js for Vercel CLI
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
       - name: Deploy to Vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          mkdir -p .vercel
-          echo "{\"projectId\":\"$VERCEL_PROJECT_ID\",\"orgId\":\"$VERCEL_ORG_ID\"}" > .vercel/project.json
-          npx --yes vercel deploy --prod --token="$VERCEL_TOKEN" --yes
+          python scripts/deploy_to_vercel.py
