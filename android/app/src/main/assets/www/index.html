@@ -363,9 +363,9 @@
         (isUp ?
         '<form id="signup-form" class="stack-lg card">' +
         '<h2>Create Account</h2>' +
-        '<label>Your Name<input type="text" name="name" placeholder="What should people call you?" maxlength="40" required /></label>' +
-        '<label>Email Address<input type="email" name="email" placeholder="you@email.com" required /></label>' +
-        '<label>Password<input type="password" name="password" placeholder="At least 6 characters" minlength="6" required /></label>' +
+        '<label>Your Name<input type="text" name="name" placeholder="What should people call you?" maxlength="40" required value="' + esc(ui.nameForm || '') + '" /></label>' +
+        '<label>Email Address<input type="email" name="email" placeholder="you@email.com" required value="' + esc(ui.emailForm || '') + '" /></label>' +
+        '<label>Password<input type="password" name="password" placeholder="At least 6 characters" minlength="6" required value="' + esc(ui.passwordForm || '') + '" /></label>' +
 
         '<div class="stack">' +
         '<label style="font-weight:600">3. Who are you joining as?</label>' +
@@ -877,6 +877,9 @@
         render();
         return;
       }
+      if (event.target.name === "name") ui.nameForm = event.target.value;
+      if (event.target.name === "email") ui.emailForm = event.target.value;
+      if (event.target.name === "password") ui.passwordForm = event.target.value;
       if (event.target.name === "specialty") ui.specialtyForm = event.target.value;
       if (event.target.name === "title" && event.target.form && event.target.form.id === "ask-form") ui.askTitle = event.target.value;
       if (event.target.name === "body" && event.target.form && event.target.form.id === "ask-form") ui.askBody = event.target.value;
