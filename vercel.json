@@ -1,3 +1,9 @@
 {
-  "installCommand": "npm install --omit=dev --no-audit --no-fund"
+  "buildCommand": null,
+  "outputDirectory": "docs",
+  "framework": null,
+  "installCommand": null,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
