@@ -4,10 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - 'android/app/src/main/assets/www/index.html'
+      - 'android/app/src/main/assets/www/**'
       - 'TeliTall.apk'
       - 'docs/**'
       - 'vercel.json'
+      - '.github/workflows/**'
+  workflow_dispatch:
 
 jobs:
   sync-and-deploy:
