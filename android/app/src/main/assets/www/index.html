@@ -243,6 +243,83 @@
       editingRoleModal: false
     };
 
+    // --- Cloud API Client Layer ---
+    const API_CONFIG = {
+      baseUrl: localStorage.getItem("telitall.api_url") || "/api/v1",
+      token: localStorage.getItem("telitall.auth_token") || null,
+      isOnline: false,
+      isChecking: false
+    };
+
+    async function apiRequest(endpoint, options = {}) {
+      const cleanBase = API_CONFIG.baseUrl.replace(/\/+$/, "");
+      const url = cleanBase + endpoint;
+      const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+      if (API_CONFIG.token) {
+        headers["Authorization"] = "Bearer " + API_CONFIG.token;
+      }
+      try {
+        const res = await fetch(url, { ...options, headers });
+        const data = await res.json();
+        return data;
+      } catch (err) {
+        return null;
+      }
+    }
+
+    async function checkApiHealth() {
+      if (API_CONFIG.isChecking) return;
+      API_CONFIG.isChecking = true;
+      try {
+        const rootUrl = API_CONFIG.baseUrl.replace(/\/api\/v1\/?$/, "");
+        const res = await fetch(rootUrl + "/health", { method: "GET" });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.status === "ok") {
+            API_CONFIG.isOnline = true;
+            syncFromCloud();
+          } else {
+            API_CONFIG.isOnline = false;
+          }
+        } else {
+          API_CONFIG.isOnline = false;
+        }
+      } catch {
+        API_CONFIG.isOnline = false;
+      } finally {
+        API_CONFIG.isChecking = false;
+        render();
+      }
+    }
+
+    async function syncFromCloud() {
+      if (!API_CONFIG.isOnline) return;
+      const res = await apiRequest("/questions?limit=50");
+      if (res && res.success && res.data && Array.isArray(res.data.items)) {
+        res.data.items.forEach((q) => {
+          const formatted = {
+            id: q.id,
+            userId: q.user_id,
+            authorName: q.author_name,
+            authorRole: q.author_role || "user",
+            authorSpecialty: q.author_specialty || "",
+            title: q.title,
+            body: q.body,
+            category: q.category,
+            kind: q.kind,
+            createdAt: q.created_at,
+            editedAt: q.edited_at,
+            isCloud: true
+          };
+          const idx = db.questions.findIndex((item) => item.id === formatted.id);
+          if (idx >= 0) db.questions[idx] = formatted;
+          else db.questions.unshift(formatted);
+        });
+        save();
+        render();
+      }
+    }
+
     function displayName() {
       if (db.currentUser && db.currentUser.name) return db.currentUser.name;
       return "Guest Member";
@@ -675,6 +752,18 @@
         '<div style="display:flex;justify-content:space-between;align-items:center"><p class="muted" style="font-size:.875rem">Signed in as <strong>' + esc(db.currentUser.email || db.currentUser.name) + '</strong></p><button type="button" class="linkish" data-signout="1">Sign Out</button></div>'
         ) +
 
+        '<section class="card" style="border-left: 4px solid ' + (API_CONFIG.isOnline ? 'var(--green)' : 'var(--muted)') + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center">' +
+        '<div><p style="font-weight:600;font-size:.9375rem">' + (API_CONFIG.isOnline ? '🟢 Connected to Cloud Backend' : '🟠 Local Offline Mode') + '</p>' +
+        '<p class="lead" style="font-size:.75rem">' + (API_CONFIG.isOnline ? 'Multi-user sync active across devices.' : 'Using on-device storage. Configure backend below to sync.') + '</p></div>' +
+        '<button type="button" class="pill" data-check-api="1">Test / Sync</button></div>' +
+        '<form id="api-config-form" class="stack" style="margin-top:.75rem">' +
+        '<label style="font-size:.75rem;font-weight:600;color:var(--muted)">Backend API URL' +
+        '<div style="display:flex;gap:.5rem;margin-top:.25rem">' +
+        '<input type="text" name="apiUrl" value="' + esc(API_CONFIG.baseUrl) + '" placeholder="e.g. /api/v1 or https://telitall.up.railway.app" style="flex:1;height:2.25rem;border-radius:999px;border:1px solid var(--line);padding:0 .75rem;font-size:.8125rem" />' +
+        '<button type="submit" class="secondary" style="height:2.25rem;padding:0 .75rem;border-radius:999px;font-size:.8125rem">Save</button>' +
+        '</div></label></form></section>' +
+
         '<section class="card"><p class="muted" style="font-size:.875rem">Reputation Points</p><p class="stat">' + (Number(db.reputation) || 0) + '</p><p class="lead">Earn points when asking, answering, or helping peers.</p></section>' +
         '<form id="name-form" class="stack"><label>Name on your posts<input type="text" name="name" maxlength="40" value="' + esc(displayName()) + '" /></label>' +
         (ui.error ? '<p class="error">' + esc(ui.error) + "</p>" : "") +
@@ -812,6 +901,13 @@
         return;
       }
 
+      if (event.target.closest("[data-check-api]")) {
+        ui.notice = "Testing API connection...";
+        render();
+        checkApiHealth();
+        return;
+      }
+
       const tab = event.target.closest("[data-tab]");
       if (tab) { openTab(tab.getAttribute("data-tab")); return; }
       const cat = event.target.closest("[data-cat]");
@@ -893,6 +989,18 @@
     });
 
     document.getElementById("app").addEventListener("submit", (event) => {
+      if (event.target.id === "api-config-form") {
+        event.preventDefault();
+        const url = event.target.apiUrl.value.trim();
+        if (url) {
+          API_CONFIG.baseUrl = url;
+          localStorage.setItem("telitall.api_url", url);
+          ui.notice = "API URL saved. Testing connection...";
+          render();
+          checkApiHealth();
+        }
+        return;
+      }
       if (event.target.id === "signup-form") { event.preventDefault(); onSignUp(event.target); }
       if (event.target.id === "signin-form") { event.preventDefault(); onSignIn(event.target); }
       if (event.target.id === "update-role-form") { event.preventDefault(); onSaveRole(event.target); }
@@ -915,7 +1023,7 @@
       }
     });
 
-    function onSignUp(form) {
+    async function onSignUp(form) {
       const name = form.name.value.trim();
       const email = form.email.value.trim().toLowerCase();
       const password = form.password.value;
@@ -937,6 +1045,25 @@
         specialty: specialty,
         intent: ui.intentForm
       };
+
+      if (API_CONFIG.isOnline) {
+        ui.notice = "Connecting to cloud backend...";
+        render();
+        const res = await apiRequest("/auth/signup", {
+          method: "POST",
+          body: JSON.stringify({ email, password, displayName: name, role: ui.roleForm, specialty })
+        });
+        if (res && res.success && res.data) {
+          API_CONFIG.token = res.data.token;
+          localStorage.setItem("telitall.auth_token", res.data.token);
+          if (res.data.user && res.data.user.id) user.id = res.data.user.id;
+        } else if (res && res.error) {
+          ui.error = res.error.message;
+          render();
+          return;
+        }
+      }
+
       db.accounts.push(user);
       db.currentUser = user;
       db.name = name;
@@ -944,9 +1071,39 @@
       openTab("home");
     }
 
-    function onSignIn(form) {
+    async function onSignIn(form) {
       const email = form.email.value.trim().toLowerCase();
       const password = form.password.value;
+
+      if (API_CONFIG.isOnline) {
+        ui.notice = "Signing in to cloud...";
+        render();
+        const res = await apiRequest("/auth/signin", {
+          method: "POST",
+          body: JSON.stringify({ email, password })
+        });
+        if (res && res.success && res.data) {
+          API_CONFIG.token = res.data.token;
+          localStorage.setItem("telitall.auth_token", res.data.token);
+          const u = res.data.user;
+          const user = {
+            id: u.id,
+            name: (u.profile && u.profile.display_name) || u.email,
+            email: u.email,
+            password: "",
+            role: (u.profile && u.profile.role) || "user",
+            specialty: (u.profile && u.profile.specialty) || "",
+            intent: "both"
+          };
+          db.currentUser = user;
+          db.name = user.name;
+          save();
+          syncFromCloud();
+          openTab("home");
+          return;
+        }
+      }
+
       const user = (db.accounts || []).find((a) => a.email === email && a.password === password);
       if (!user) {
         ui.error = "Those details didn't match our records.";
@@ -1002,7 +1159,7 @@
       }, 1200);
     }
 
-    function onAsk(form) {
+    async function onAsk(form) {
       const title = form.title.value.trim();
       const body = form.body.value.trim();
       ui.askTitle = form.title.value;
@@ -1011,7 +1168,20 @@
       if (title.length > 140) { ui.error = "Keep the title under 140 characters."; render(); return; }
       if (body.length < 20) { ui.error = "Add a little more detail so people know how to answer."; render(); return; }
       if (!ui.askCategory) { ui.error = "Pick a category."; render(); return; }
-      const id = db.nextId++;
+
+      let id = db.nextId++;
+      const kind = ui.kind === "knowledge" ? "knowledge" : "experience";
+
+      if (API_CONFIG.isOnline && API_CONFIG.token) {
+        const res = await apiRequest("/questions", {
+          method: "POST",
+          body: JSON.stringify({ title, body, category: ui.askCategory, kind })
+        });
+        if (res && res.success && res.data) {
+          id = res.data.id;
+        }
+      }
+
       db.questions.push({
         id,
         userId: "me",
@@ -1021,7 +1191,7 @@
         title,
         body,
         category: ui.askCategory,
-        kind: ui.kind === "knowledge" ? "knowledge" : "experience",
+        kind,
         createdAt: new Date().toISOString()
       });
       bump("me", 1);
@@ -1085,14 +1255,26 @@
       render();
     }
 
-    function onAnswer(form) {
+    async function onAnswer(form) {
       const body = form.body.value.trim();
       const question = questionById(ui.qid);
       if (!question) return;
       if (body.length < 10) { ui.error = "Share a bit more than a few words."; render(); return; }
       if (body.length > 4000) { ui.error = "That answer is too long."; render(); return; }
+
+      let aid = db.nextId++;
+      if (API_CONFIG.isOnline && API_CONFIG.token && typeof question.id === 'number') {
+        const res = await apiRequest("/questions/" + question.id + "/answers", {
+          method: "POST",
+          body: JSON.stringify({ body })
+        });
+        if (res && res.success && res.data) {
+          aid = res.data.id;
+        }
+      }
+
       db.answers.push({
-        id: db.nextId++,
+        id: aid,
         questionId: question.id,
         userId: "me",
         authorName: displayName(),
@@ -1109,11 +1291,16 @@
       render();
     }
 
-    function onVote(answerId) {
+    async function onVote(answerId) {
       const answer = db.answers.find((item) => item.id === answerId);
       if (!answer) return;
       if (answer.userId === "me") { ui.error = "You can't mark your own answer as helpful."; render(); return; }
       if (db.votes.includes(answerId)) { ui.error = "You already marked this helpful."; render(); return; }
+
+      if (API_CONFIG.isOnline && API_CONFIG.token && typeof answerId === 'number') {
+        apiRequest("/answers/" + answerId + "/helpful", { method: "POST" });
+      }
+
       db.votes.push(answerId);
       answer.helpful += 1;
       bump(answer.userId, 1);
@@ -1122,12 +1309,17 @@
       render();
     }
 
-    function onAccept(answerId) {
+    async function onAccept(answerId) {
       const answer = db.answers.find((item) => item.id === answerId);
       const question = questionById(ui.qid);
       if (!answer || !question) return;
       if (question.userId !== "me") { ui.error = "Only the person who asked can accept an answer."; render(); return; }
       if (answer.isBest) return;
+
+      if (API_CONFIG.isOnline && API_CONFIG.token && typeof answerId === 'number') {
+        apiRequest("/answers/" + answerId + "/accept", { method: "POST" });
+      }
+
       const previous = db.answers.filter((item) => item.questionId === question.id && item.isBest);
       previous.forEach((item) => {
         item.isBest = false;
@@ -1145,13 +1337,18 @@
       if (action === "no") { ui.confirmDelete = false; render(); return; }
       const question = questionById(ui.qid);
       if (!question || question.userId !== "me") { ui.error = "You can only delete your own question."; render(); return; }
+
+      if (API_CONFIG.isOnline && API_CONFIG.token && typeof question.id === 'number') {
+        apiRequest("/questions/" + question.id, { method: "DELETE" });
+      }
+
       db.questions = db.questions.filter((item) => item.id !== question.id);
       db.answers = db.answers.filter((item) => item.questionId !== question.id);
       save();
       openTab("home");
     }
 
-    function onLaya(form) {
+    async function onLaya(form) {
       const prompt = form.prompt.value.trim();
       if (prompt.length < 2) { ui.error = "Ask Laya a real question."; render(); return; }
       if (prompt.length > 2000) { ui.error = "That question is too long."; render(); return; }
@@ -1162,7 +1359,24 @@
         ui.threadId = thread.id;
       }
       thread.messages.push({ id: db.nextId++, role: "user", content: prompt });
-      thread.messages.push({ id: db.nextId++, role: "assistant", content: layaReply(prompt) });
+      render();
+
+      let reply = "";
+      if (API_CONFIG.isOnline && API_CONFIG.token) {
+        const res = await apiRequest("/laya/message", {
+          method: "POST",
+          body: JSON.stringify({ message: prompt, threadId: typeof thread.id === 'number' ? thread.id : undefined })
+        });
+        if (res && res.success && res.data && res.data.message) {
+          reply = res.data.message.content;
+        }
+      }
+
+      if (!reply) {
+        reply = layaReply(prompt);
+      }
+
+      thread.messages.push({ id: db.nextId++, role: "assistant", content: reply });
       thread.updatedAt = new Date().toISOString();
       save();
       ui.error = "";
@@ -1190,6 +1404,7 @@
     }, 1000);
 
     render();
+    checkApiHealth(); // Probe backend API connectivity on startup
     setTimeout(() => {
       if (ui.screen === "boot") {
         if (!db.currentUser) {

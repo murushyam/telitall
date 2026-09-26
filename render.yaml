@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: telitall-api
+    env: docker
+    dockerfilePath: api/Dockerfile
+    dockerContext: api
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 4000
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_URL
+        value: https://telitall.vercel.app
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
